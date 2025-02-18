@@ -1,4 +1,4 @@
-const FLASK_SERVER_URL = "https://9c9b-152-53-49-156.ngrok-free.app/webhook"; // Replace with your Flask server URL
+const FLASK_SERVER_URL = "https://noxeziz.onrender.com/webhook"; // Replace with your Flask server URL
 
 addEventListener('fetch', event => {
   event.respondWith(handleRequest(event.request))
