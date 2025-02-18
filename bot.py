@@ -51,31 +51,58 @@ def create_alert(event, amount, recipient, is_new):
     )
 
 def check_new_wallet(wallet_address, current_slot, current_tx_signature):
-    """Check if wallet has any transactions before current one"""
+    """Check if wallet has ANY transactions before current one"""
     try:
         print(f"\n🔎 Freshness check for {wallet_address[:6]}...")
         
-        payload = {
+        # First check account creation slot
+        acc_payload = {
             "jsonrpc": "2.0",
             "id": 1,
-            "method": "getSignaturesForAddress",
-            "params": [wallet_address, {"limit": 5}]
+            "method": "getAccountInfo",
+            "params": [wallet_address]
         }
         
-        time.sleep(0.3)  # Rate limit protection
-        response = requests.post(HELIUS_RPC, json=payload)
-        response.raise_for_status()
+        acc_response = requests.post(HELIUS_RPC, json=acc_payload)
+        acc_response.raise_for_status()
+        acc_data = acc_response.json()
         
-        transactions = response.json().get('result', [])
-        
-        # No transactions = new wallet
-        if not transactions:
-            print("✅ Brand new wallet (no history)")
+        # If account doesn't exist, it's new
+        if not acc_data['result']['value']:
+            print("✅ Brand new wallet (no account exists)")
             return True
             
-        # Check if any transaction is older than current one
-        for tx in transactions:
-            # Skip the current transaction itself
+        creation_slot = acc_data['result']['value']['owner'] != "11111111111111111111111111111111" and \
+                       acc_data['result']['value']['lamports'] > 0
+        
+        # Now check transaction history comprehensively
+        all_txs = []
+        before = None
+        
+        while True:
+            tx_payload = {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "getSignaturesForAddress",
+                "params": [
+                    wallet_address,
+                    {"limit": 100, "before": before}
+                ]
+            }
+            
+            time.sleep(0.3)
+            tx_response = requests.post(HELIUS_RPC, json=tx_payload)
+            tx_response.raise_for_status()
+            txs = tx_response.json().get('result', [])
+            
+            if not txs:
+                break
+                
+            all_txs.extend(txs)
+            before = txs[-1]['signature']
+
+        # Check all historical transactions
+        for tx in all_txs:
             if tx.get('signature') == current_tx_signature:
                 continue
                 
@@ -89,7 +116,7 @@ def check_new_wallet(wallet_address, current_slot, current_tx_signature):
     except Exception as e:
         log_error("WALLET FRESHNESS CHECK", e, getattr(e, 'response', None))
         return False
-
+        
 def validate_transfer(event):
     """Validate transfer with strict amount filtering"""
     try:
